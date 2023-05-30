@@ -1,0 +1,340 @@
+import pandas as pd
+from PIL import Image, ImageOps
+import os
+import numpy as np
+import torch
+from torch import Tensor
+from torch.optim.lr_scheduler import StepLR
+from torchvision import transforms
+import cv2
+from albumentations.augmentations.transforms import Lambda, RandomBrightnessContrast
+from albumentations.augmentations.geometric.transforms import ShiftScaleRotate, HorizontalFlip
+from albumentations.pytorch.transforms import ToTensorV2
+from albumentations.augmentations.crops.transforms import RandomResizedCrop
+from albumentations import Compose
+import torch.nn as nn
+import torch.utils.data as Data
+import torch.utils.data.dataset as Dataset
+import mymodel
+# from d2l import torch as d2l
+import csv
+import time
+from sklearn.model_selection import train_test_split
+
+"""本文档主要是解决训练过程中的一些所用到的函数的集合
+函数列表：
+获取神经网络：get_net
+标准化数组:standardization
+标准化每个通道:sample_normalize
+训练集的数据增广:training_compose
+"""
+
+# train_df = pd.read_csv('../data/archive/testDataset/train-dataset.csv')
+# boneage_mean = train_df['boneage'].mean()
+# boneage_div = train_df['boneage'].std()
+
+def get_net(attention_size=256, feature_channels=2048, output_channels=1024, isEnsemble=True):
+    """获取神经网络，attention_size是指注意力机制Q，K矩阵的长度（default=256）， feature_channels为MMAC输出的通道数（default=2048），output_channels为GA模块输出的注意力图通道数（default=1024）
+    isEnsemble是指调用的是整体MMANet（default=TRUE），若值为False，则只调用前半部分的ResNet+MMCA"""
+    if isEnsemble:
+        # MMANet_beforeGA = torch.load('./MMANet_BeforeGA.pth')
+        MMANet_beforeGA = torch.load('./module.pth')
+        GA = mymodel.GA(attention_size, feature_channels, output_channels, MMANet_beforeGA)
+        MMANet = mymodel.MMANet(GA)
+    else:
+        MMANet = mymodel.MMANet_BeforeGA(32, *mymodel.get_ResNet())
+    return MMANet
+
+def sample_normalize(image, **kwargs):
+    """标准化每个通道"""
+    image = image / 255
+    channel = image.shape[2]
+    mean, std = image.reshape((-1, channel)).mean(axis=0), image.reshape((-1, channel)).std(axis=0)
+    return (image - mean) / (std + 1e-3)
+
+
+# 随机删除一个图片上的像素，p为执行概率，scale擦除部分占据图片比例的范围，ratio擦除部分的长宽比范围
+randomErasing = transforms.RandomErasing(scale=(0.02, 0.08), ratio=(0.5, 2), p=0.8)
+
+
+def randomErase(image, **kwargs):
+    """随机删除一个图片上的像素"""
+    return randomErasing(image)
+
+
+transform_train = Compose([
+    # 训练集的数据增广
+    # 随机大小裁剪，512为调整后的图片大小，（0.5,1.0）为scale剪切的占比范围，概率p为0.5
+    RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
+    # ShiftScaleRotate操作：仿射变换，shift为平移，scale为缩放比率，rotate为旋转角度范围，border_mode用于外推法的标记，value即为padding_value，前者用到的，p为概率
+    ShiftScaleRotate(shift_limit=0.2, scale_limit=0.2, rotate_limit=20, border_mode=cv2.BORDER_CONSTANT, value=0.0,
+                     p=0.8),
+    # 水平翻转
+    HorizontalFlip(p=0.5),
+    # 概率调整图片的对比度
+    RandomBrightnessContrast(p=0.8, contrast_limit=(-0.3, 0.2)),
+    # 标准化
+    Lambda(image=sample_normalize),
+    # 将图片转化为tensor类型
+    ToTensorV2(),
+    # 做随机擦除
+    Lambda(image=randomErase)
+])
+
+transform_valid = Compose([
+    # 验证集的数据处理
+    Lambda(image=sample_normalize),
+    ToTensorV2()
+])
+
+
+def read_image(file_path, image_size=512):
+    """读取图片，并统一修改为512x512"""
+    img = Image.open(file_path)
+    # 开始修改尺寸
+    w, h = img.size
+    long = max(w, h)
+    # 按比例缩放成512
+    w, h = int(w / long * image_size), int(h / long * image_size)
+    # 压缩并插值
+    img = img.resize((w, h), Image.ANTIALIAS)
+    # 然后是给短边扩充，使用ImageOps.expand
+    delta_w, delta_h = image_size - w, image_size - h
+    padding = (delta_w // 2, delta_h // 2, delta_w - (delta_w // 2), delta_h - (delta_h // 2))
+    # 转化成np.array
+    return np.array(ImageOps.expand(img, padding).convert("RGB"))
+
+def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
+    age_df = pd.read_csv(os.path.join(data_dir, csv_name))
+    age_df['path'] = age_df['id'].map(lambda x: os.path.join(data_dir,
+                                                            csv_name.split('.')[0],
+                                                            '{}.png'.format(x)))
+    age_df['exists'] = age_df['path'].map(os.path.exists)
+    print(age_df['exists'].sum(), 'images found of', age_df.shape[0], 'total')
+    age_df['male'] = age_df['male'].astype('float32')
+    age_df['gender'] = age_df['male'].map(lambda x:'male' if x else 'female')
+    global boneage_mean
+    boneage_mean = age_df['boneage'].mean()
+    global boneage_div
+    boneage_div = age_df['boneage'].std()
+    # we don't want normalization for now
+    # boneage_mean = 0
+    # boneage_div = 1.0
+    age_df['zscore'] = age_df['boneage'].map(lambda x: (x-boneage_mean)/boneage_div)
+    age_df.dropna(inplace = True)
+    age_df['boneage_category'] = pd.cut(age_df['boneage'], category_num)
+    raw_train_df, valid_df = train_test_split(
+    age_df,
+    test_size=split_ratio,
+    random_state=2023,
+    stratify=age_df['boneage_category']
+    )
+    print('train', raw_train_df.shape[0], 'validation', valid_df.shape[0])
+    train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
+    # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
+    print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
+    return train_df, valid_df
+
+# create 'dataset's subclass,we can read a picture when we need in training trough this way
+class BAATrainDataset(Dataset.Dataset):
+    """重写Dataset类"""
+
+    def __init__(self, df) -> None:
+        self.df = df
+
+    def __getitem__(self, index):
+        row = self.df.iloc[index]
+        num = int(row['id'])
+        # return (transform_train(image=read_iamge(self.file_path, f"{num}.png"))['image'], Tensor([row['male']])), row['boneage']
+        return (transform_train(image=read_image(row["path"]))['image'], Tensor([row['male']])), row[
+            'zscore']
+
+    def __len__(self):
+        return len(self.df)
+
+class BAAValDataset(Dataset.Dataset):
+
+    def __init__(self, df) -> None:
+        self.df = df
+
+
+    def __getitem__(self, index):
+        row = self.df.iloc[index]
+        num = int(row['id'])
+        return (transform_valid(image=read_image(row["path"]))['image'], Tensor([row['male']])), row[
+            'boneage']
+
+    def __len__(self):
+        return len(self.df)
+
+def create_data_loader(train_df, val_df):
+    return BAATrainDataset(train_df), BAAValDataset(val_df)
+
+# criterion = nn.CrossEntropyLoss(reduction='none')
+# penalty function
+def L1_penalty(net, alpha):
+    loss = 0
+    for param in net.MLP.parameters():
+        loss += torch.sum(torch.abs(param))
+
+    return alpha * loss
+
+def try_gpu(i=0):
+    """如果存在，则返回gpu(i)，否则返回cpu()"""
+    if torch.cuda.device_count() >= i + 1:
+        return torch.device(f'cuda:{i}')
+    return torch.device('cpu')
+
+# def accuracy(y_hat, y):
+#     """得出精确数量"""
+#     if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
+#         y_hat = d2l.argmax(y_hat, axis=1)
+#     cmp = d2l.astype(y_hat, y.dtype) == y
+#     return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
+
+def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_decay, loss_fn, batch_size=32, model_path="./model.pth", record_path="./RECORD.csv"):
+    """将训练函数和验证函数杂糅在一起的垃圾函数"""
+    # record outputs of every epoch
+    record = [['epoch', 'training loss', 'val loss', 'acc']]
+    with open(record_path, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        for row in record:
+            writer.writerow(row)
+    device = try_gpu()
+    # 数据读取
+    # Creates dataloaders, which load data in batches
+    # Note: test loader is not shuffled or sampled
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True)
+
+    val_loader = torch.utils.data.DataLoader(
+        valid_dataset,
+        batch_size=batch_size,
+        shuffle=False)
+
+
+    ## Network, optimizer, and loss function creation
+    net = net.to(device)
+    net = net.train()
+
+    #   loss_fn =  nn.MSELoss(reduction = 'sum')
+    # loss_fn = nn.L1Loss(reduction='sum')
+    lr = lr
+
+    optimizer = torch.optim.Adam(net.parameters(), lr=lr, weight_decay=wd)
+    # 每过10轮，学习率降低一半
+    scheduler = StepLR(optimizer, step_size=lr_period, gamma=lr_decay)
+
+    ## Trains
+
+    for epoch in range(num_epochs):
+        print(epoch)
+        this_record = []
+        global training_loss
+        training_loss = torch.tensor([0], dtype=torch.float32)
+        global total_size
+        total_size = torch.tensor([0], dtype=torch.float32)
+
+        # xm.rendezvous("initialization")
+
+        start_time = time.time()
+        # 在不同的设备上运行该模型
+
+        #   打开微调
+        net.fine_tune()
+        #   enumerate()，为括号中序列构建索引
+        for batch_idx, data in enumerate(train_loader):
+            # #put data to GPU
+            image, gender = data[0]
+            image, gender = image.type(torch.FloatTensor).to(device), gender.type(torch.FloatTensor).to(device)
+
+            batch_size = len(data[1])
+            label = data[1].to(device)
+
+            # zero the parameter gradients，是参数梯度归0
+            optimizer.zero_grad()
+            # forward
+            # _, _, _, _, _, _, _, y_pred = net(image, gender)
+            y_pred = net(image, gender)
+            y_pred = y_pred.squeeze()
+
+            # print(y_pred, label)，求损失
+            loss = loss_fn(y_pred, label)
+            # loss = criterion(y_pred, label.long()).sum()
+            # backward,calculate gradients，反馈计算梯度
+            total_loss = loss + L1_penalty(net, 1e-5)
+            total_loss.backward()
+            # loss.backward()
+            # backward,update parameter，更新参数
+            optimizer.step()
+
+            batch_loss = loss.item()
+
+            training_loss += batch_loss
+            total_size += batch_size
+            print('this batch loss:', batch_loss / batch_size)
+
+        ## Evaluation
+        # Sets net to eval and no grad context
+        val_total_size, mae_loss = valid_fn(net=net, val_loader=val_loader, device=device)
+        # accuracy_num = accuracy(pred_list[1:, :], grand_age[1:])
+        scheduler.step()
+
+        train_loss, val_mae = training_loss / total_size, mae_loss / val_total_size
+        this_record.append([epoch, round(train_loss.item(), 2), round(val_mae.item(), 2)])
+        with open('./RECORD.csv', 'a+', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            for row in this_record:
+                writer.writerow(row)
+        print(
+            f'training loss is {round(train_loss.item(), 2)}, val loss is {round(val_mae.item(), 2)}, time : {round((time.time() - start_time), 2)}, lr:{optimizer.param_groups[0]["lr"]}')
+    torch.save(net, model_path)
+
+def valid_fn(*, net, val_loader, device):
+    """验证函数：输入参数：网络，验证数据，验证性别，验证标签
+    输出：返回MAE损失"""
+    net.fine_tune(False)
+    global val_total_size
+    val_total_size = torch.tensor([0], dtype=torch.float32)
+    global mae_loss
+    mae_loss = torch.tensor([0], dtype=torch.float32)
+    loss_fn = nn.L1Loss(reduction='sum')
+    with torch.no_grad():
+        for batch_idx, data in enumerate(val_loader):
+            val_total_size += len(data[1])
+
+            image, gender = data[0]
+            image, gender = image.type(torch.FloatTensor).to(device), gender.type(torch.FloatTensor).to(device)
+
+            label = data[1].type(torch.FloatTensor).to(device)
+
+            #   net内求出的是normalize后的数据，这里应该是是其还原，而不是直接net（）
+            y_pred = net(image, gender)
+            y_pred = y_pred.cpu()
+            label = label.cpu()
+            y_pred = y_pred * boneage_div + boneage_mean
+            # y_pred_loss = y_pred.argmax(axis=1)
+            y_pred = y_pred.squeeze()
+
+            batch_loss = loss_fn(y_pred, label).item()
+            mae_loss += batch_loss
+    return val_total_size, mae_loss
+
+if __name__ == '__main__':
+    # num_epochs, learning_rate, weight_decay = 10, 2e-4, 5e-4
+    # lr_period, lr_decay = 10, 0.5
+    # x = torch.rand((16, 3, 512, 512))
+    # gender = torch.ones((16, 1))
+    # age = torch.ones((16, 1))
+    # MMANet = get_net(isEnsemble=True)
+    # MMANet = MMANet.to(device=try_gpu())
+    # print(sum(p.numel() for p in MMANet.parameters()))
+    # params = list(MMANet.MLP.parameters())
+    # print(params)
+    bone_dir = "F:\GitCode\BoneAgeAss-main\data/archive/testDataset"
+    csv_name = "valid-dataset.csv"
+    train_df, valid_df = split_data(bone_dir, csv_name, 10, 0.1, 10)
+    print("boneage_mean = ", boneage_mean, "boneage_div", boneage_div)
