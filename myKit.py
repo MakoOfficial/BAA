@@ -16,7 +16,8 @@ import torch.nn as nn
 import torch.utils.data as Data
 import torch.utils.data.dataset as Dataset
 import mymodel
-# from d2l import torch as d2l
+import Animator
+from d2l import torch as d2l
 import csv
 import time
 from sklearn.model_selection import train_test_split
@@ -133,6 +134,8 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
     # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
     print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
+    train_df.to_csv("train.csv")
+    valid_df.to_csv("valid.csv")
     return train_df, valid_df
 
 # create 'dataset's subclass,we can read a picture when we need in training trough this way
@@ -185,17 +188,17 @@ def try_gpu(i=0):
         return torch.device(f'cuda:{i}')
     return torch.device('cpu')
 
-# def accuracy(y_hat, y):
-#     """得出精确数量"""
-#     if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
-#         y_hat = d2l.argmax(y_hat, axis=1)
-#     cmp = d2l.astype(y_hat, y.dtype) == y
-#     return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
+def accuracy(y_hat, y):
+    """得出精确数量"""
+    if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
+        y_hat = d2l.argmax(y_hat, axis=1)
+    cmp = d2l.astype(y_hat, y.dtype) == y
+    return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
 
 def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_decay, loss_fn, batch_size=32, model_path="./model.pth", record_path="./RECORD.csv"):
     """将训练函数和验证函数杂糅在一起的垃圾函数"""
     # record outputs of every epoch
-    record = [['epoch', 'training loss', 'val loss', 'acc']]
+    record = [['epoch', 'training loss', 'val loss', 'lr']]
     with open(record_path, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         for row in record:
@@ -227,6 +230,9 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
     optimizer = torch.optim.Adam(net.parameters(), lr=lr, weight_decay=wd)
     # 每过10轮，学习率降低一半
     scheduler = StepLR(optimizer, step_size=lr_period, gamma=lr_decay)
+
+    seed=10
+    torch.manual_seed(seed)  
 
     ## Trains
 
@@ -269,28 +275,31 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             total_loss.backward()
             # loss.backward()
             # backward,update parameter，更新参数
-            optimizer.step()
+            # 6_3 增大batchsize，若累计8个batch_size更新梯度，或者batch为最后一个batch
+            if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
+                optimizer.step()
+                print('Optimizer step seccessful!! This batch idx: ', batch_idx + 1)
 
             batch_loss = loss.item()
 
             training_loss += batch_loss
             total_size += batch_size
-            print('this batch loss:', batch_loss / batch_size)
+            print('epoch', epoch+1, '; ', batch_idx+1,' batch loss:', batch_loss / batch_size)
 
         ## Evaluation
         # Sets net to eval and no grad context
         val_total_size, mae_loss = valid_fn(net=net, val_loader=val_loader, device=device)
         # accuracy_num = accuracy(pred_list[1:, :], grand_age[1:])
-        scheduler.step()
-
+        
         train_loss, val_mae = training_loss / total_size, mae_loss / val_total_size
-        this_record.append([epoch, round(train_loss.item(), 2), round(val_mae.item(), 2)])
-        with open('./RECORD.csv', 'a+', newline='') as csvfile:
+        this_record.append([epoch, round(train_loss.item(), 2), round(val_mae.item(), 2), optimizer.param_groups[0]["lr"]])
+        print(
+            f'training loss is {round(train_loss.item(), 2)}, val loss is {round(val_mae.item(), 2)}, time : {round((time.time() - start_time), 2)}, lr:{optimizer.param_groups[0]["lr"]}')
+        scheduler.step()
+        with open(record_path, 'a+', newline='') as csvfile:
             writer = csv.writer(csvfile)
             for row in this_record:
                 writer.writerow(row)
-        print(
-            f'training loss is {round(train_loss.item(), 2)}, val loss is {round(val_mae.item(), 2)}, time : {round((time.time() - start_time), 2)}, lr:{optimizer.param_groups[0]["lr"]}')
     torch.save(net, model_path)
 
 def valid_fn(*, net, val_loader, device):
@@ -323,6 +332,19 @@ def valid_fn(*, net, val_loader, device):
             mae_loss += batch_loss
     return val_total_size, mae_loss
 
+def loss_map(class_loss, class_num, path):
+    """"输入参数：各个年龄的损失class_loss，各个年龄的数量class_num，画出每个年龄的误差图"""
+    data = torch.zeros((230, 1))
+    for i in range(class_loss.shape[0]):
+        if class_num[i]:
+            data[i] = class_loss[i] / class_num[i]
+    legend = ['MAE']
+    animator = Animator.Animator(xlabel='month', xlim=[1, 230], legend=legend)
+    for i in range(data.shape[0]):
+        animator.add(i, data[i])
+    animator.save(path)
+
+
 if __name__ == '__main__':
     # num_epochs, learning_rate, weight_decay = 10, 2e-4, 5e-4
     # lr_period, lr_decay = 10, 0.5
@@ -335,6 +357,6 @@ if __name__ == '__main__':
     # params = list(MMANet.MLP.parameters())
     # print(params)
     bone_dir = "F:\GitCode\BoneAgeAss-main\data/archive/testDataset"
-    csv_name = "valid-dataset.csv"
+    csv_name = "boneage-traning-dataset.csv"
     train_df, valid_df = split_data(bone_dir, csv_name, 10, 0.1, 10)
     print("boneage_mean = ", boneage_mean, "boneage_div", boneage_div)
