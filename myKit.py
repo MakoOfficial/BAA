@@ -16,8 +16,8 @@ import torch.nn as nn
 import torch.utils.data as Data
 import torch.utils.data.dataset as Dataset
 import mymodel
-import Animator
-from d2l import torch as d2l
+# import Animator
+# from d2l import torch as d2l
 import csv
 import time
 from sklearn.model_selection import train_test_split
@@ -188,12 +188,12 @@ def try_gpu(i=0):
         return torch.device(f'cuda:{i}')
     return torch.device('cpu')
 
-def accuracy(y_hat, y):
-    """得出精确数量"""
-    if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
-        y_hat = d2l.argmax(y_hat, axis=1)
-    cmp = d2l.astype(y_hat, y.dtype) == y
-    return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
+# def accuracy(y_hat, y):
+#     """得出精确数量"""
+#     if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
+#         y_hat = d2l.argmax(y_hat, axis=1)
+#     cmp = d2l.astype(y_hat, y.dtype) == y
+#     return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
 
 def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_decay, loss_fn, batch_size=32, model_path="./model.pth", record_path="./RECORD.csv"):
     """将训练函数和验证函数杂糅在一起的垃圾函数"""
@@ -271,9 +271,10 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             loss = loss_fn(y_pred, label)
             # loss = criterion(y_pred, label.long()).sum()
             # backward,calculate gradients，反馈计算梯度
-            total_loss = loss + L1_penalty(net, 1e-5)
-            total_loss.backward()
-            # loss.backward()
+            # 弃用罚函数
+#             total_loss = loss + L1_penalty(net, 1e-5)
+#             total_loss.backward() 
+            loss.backward()
             # backward,update parameter，更新参数
             # 6_3 增大batchsize，若累计8个batch_size更新梯度，或者batch为最后一个batch
             if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
@@ -332,17 +333,17 @@ def valid_fn(*, net, val_loader, device):
             mae_loss += batch_loss
     return val_total_size, mae_loss
 
-def loss_map(class_loss, class_num, path):
-    """"输入参数：各个年龄的损失class_loss，各个年龄的数量class_num，画出每个年龄的误差图"""
-    data = torch.zeros((230, 1))
-    for i in range(class_loss.shape[0]):
-        if class_num[i]:
-            data[i] = class_loss[i] / class_num[i]
-    legend = ['MAE']
-    animator = Animator.Animator(xlabel='month', xlim=[1, 230], legend=legend)
-    for i in range(data.shape[0]):
-        animator.add(i, data[i])
-    animator.save(path)
+# def loss_map(class_loss, class_num, path):
+#     """"输入参数：各个年龄的损失class_loss，各个年龄的数量class_num，画出每个年龄的误差图"""
+#     data = torch.zeros((230, 1))
+#     for i in range(class_loss.shape[0]):
+#         if class_num[i]:
+#             data[i] = class_loss[i] / class_num[i]
+#     legend = ['MAE']
+#     animator = Animator.Animator(xlabel='month', xlim=[1, 230], legend=legend)
+#     for i in range(data.shape[0]):
+#         animator.add(i, data[i])
+#     animator.save(path)
 
 
 if __name__ == '__main__':
