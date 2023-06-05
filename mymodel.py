@@ -64,7 +64,7 @@ class MMCA_module(nn.Module):
         for i in range(level):  # DR的个数由level来定
             #   先是确定输出维度
             output_channels = input_channels // reduction[i]
-            #   在modules里添加卷积层、BN曾、激活层
+            #   在modules里添加卷积层、BN层、激活层
             modules.append(nn.Conv2d(input_channels, output_channels, kernel_size = 1))  # 默认1x1卷积
             modules.append(nn.BatchNorm2d(output_channels))
             modules.append(nn.ReLU())
@@ -97,7 +97,7 @@ class MMCA_module(nn.Module):
 
         x = self.last_conv(x)
         #   F*(1-A) = F - F*A
-        return (1 - x), (input - input * x)
+        return input - input * x
 
 # 主要任务:生成输入GA模块的feature_map、将feature_map处理后的texture，对性别数据进行编码后的gender_encode
 # 初始化参数：性别编码长度（文中用的32）， 主干网络，输出通道
@@ -130,32 +130,40 @@ class MMANet_BeforeGA(nn.Module):
         self.gender_BN = nn.BatchNorm1d(genderSize)
 
         # 2.21新增，在GA模块之前就对resnet+MMCA进行训练，所以这里就添加MLP层
-        self.MLP = nn.Sequential(
-            nn.Linear(out_channels + genderSize, 1024),
-            # nn.Linear(out_channels, 1024),
-            nn.BatchNorm1d(1024),
-            nn.ReLU(),
-            nn.Linear(1024, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            # 3_20改，将结果输出为一个长为230的向量，而不是一个单独的数字
-            # nn.Linear(512, 1).
-            nn.Linear(512, 230),
-            nn.BatchNorm1d(230),
-            nn.ReLU(),
-            nn.Linear(230, 1)
-            # nn.Softmax()
-        )
+#         self.MLP = nn.Sequential(
+#             nn.Linear(out_channels + genderSize, 1024),
+#             # nn.Linear(out_channels, 1024),
+#             nn.BatchNorm1d(1024),
+#             nn.ReLU(),
+#             nn.Linear(1024, 512),
+#             nn.BatchNorm1d(512),
+#             nn.ReLU(),
+#             # 3_20改，将结果输出为一个长为230的向量，而不是一个单独的数字
+#             # nn.Linear(512, 1).
+#             nn.Linear(512, 230),
+#             nn.BatchNorm1d(230),
+#             nn.ReLU(),
+#             nn.Linear(230, 1)
+#             # nn.Softmax()
+#         )
+        # 6.5 将MLP拆分，删除一个线性层，不使用罚函数
+        self.FC0 = nn.Linear(out_channels + genderSize, 1024)
+        self.BN0 = nn.BatchNorm1d(1024)
+
+        self.FC1 = nn.Linear(1024, 512)
+        self.BN1 = nn.BatchNorm1d(512)
+
+        self.output = nn.Linear(512, 1)
 
 
     # 前馈函数，需要输入一个图片，以及性别，不仅需要输出feature map，还需要加入MLP输出分类结果
     def forward(self, image, gender):
     # def forward(self, image):
         # 第一步：用主干网络生成feature_map
-        AM1, x = self.MMCA1(self.backbone1(image))
-        AM2, x = self.MMCA2(self.backbone2(x))
-        AM3, x = self.MMCA3(self.backbone3(x))
-        AM4, x = self.MMCA4(self.backbone4(x))
+        x = self.MMCA1(self.backbone1(image))
+        x = self.MMCA2(self.backbone2(x))
+        x = self.MMCA3(self.backbone3(x))
+        x = self.MMCA4(self.backbone4(x))
         # 由于MMCA不改变通道数，所以x的shape由原来的NCHW -> N(2048)(H/32)(W/32)
         feature_map = x
 
@@ -177,10 +185,14 @@ class MMANet_BeforeGA(nn.Module):
 
         # 2.21 第四步，为这一层的训练做准备，使texture+gender作为输入，放入MLP
         x = torch.cat([x, gender_encode], dim=1)
-        output_beforeGA = self.MLP(x)
+#         output_beforeGA = self.MLP(x)
+        x = F.relu(self.BN0(self.FC0(x)))
 
-        # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
-        return output_beforeGA
+        x = F.relu(self.BN1(self.FC1(x)))
+
+        x = self.output(x)
+
+        return x
     # 加入微调函数
     def fine_tune(self, need_fine_tune = True):
         self.train(need_fine_tune)
