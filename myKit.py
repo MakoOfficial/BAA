@@ -16,8 +16,8 @@ import torch.nn as nn
 import torch.utils.data as Data
 import torch.utils.data.dataset as Dataset
 import mymodel
-# import Animator
-# from d2l import torch as d2l
+import Animator
+from d2l import torch as d2l
 import csv
 import time
 from sklearn.model_selection import train_test_split
@@ -66,7 +66,7 @@ def randomErase(image, **kwargs):
 transform_train = Compose([
     # 训练集的数据增广
     # 随机大小裁剪，512为调整后的图片大小，（0.5,1.0）为scale剪切的占比范围，概率p为0.5
-    RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
+    # RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
     # ShiftScaleRotate操作：仿射变换，shift为平移，scale为缩放比率，rotate为旋转角度范围，border_mode用于外推法的标记，value即为padding_value，前者用到的，p为概率
     ShiftScaleRotate(shift_limit=0.2, scale_limit=0.2, rotate_limit=20, border_mode=cv2.BORDER_CONSTANT, value=0.0,
                      p=0.8),
@@ -77,9 +77,9 @@ transform_train = Compose([
     # 标准化
     Lambda(image=sample_normalize),
     # 将图片转化为tensor类型
-    ToTensorV2(),
+    ToTensorV2()
     # 做随机擦除
-    Lambda(image=randomErase)
+    # Lambda(image=randomErase)
 ])
 
 transform_valid = Compose([
@@ -137,6 +137,7 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     train_df.to_csv("train.csv")
     valid_df.to_csv("valid.csv")
     return train_df, valid_df
+    # return train_df, valid_df, boneage_mean, boneage_div
 
 # create 'dataset's subclass,we can read a picture when we need in training trough this way
 class BAATrainDataset(Dataset.Dataset):
@@ -175,12 +176,12 @@ def create_data_loader(train_df, val_df):
 
 # criterion = nn.CrossEntropyLoss(reduction='none')
 # penalty function
-def L1_penalty(net, alpha):
-    loss = 0
-    for param in net.MLP.parameters():
-        loss += torch.sum(torch.abs(param))
+# def L1_penalty(net, alpha):
+#     loss = 0
+#     for param in net.MLP.parameters():
+#         loss += torch.sum(torch.abs(param))
 
-    return alpha * loss
+#     return alpha * loss
 
 def try_gpu(i=0):
     """如果存在，则返回gpu(i)，否则返回cpu()"""
@@ -231,7 +232,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
     # 每过10轮，学习率降低一半
     scheduler = StepLR(optimizer, step_size=lr_period, gamma=lr_decay)
 
-    seed=10
+    seed=101
     torch.manual_seed(seed)  
 
     ## Trains
@@ -277,7 +278,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             loss.backward()
             # backward,update parameter，更新参数
             # 6_3 增大batchsize，若累计8个batch_size更新梯度，或者batch为最后一个batch
-            if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
+            if (batch_idx + 1) % 4 == 0 or batch_idx == 377 :
                 optimizer.step()
                 print('Optimizer step seccessful!! This batch idx: ', batch_idx + 1)
 
@@ -302,6 +303,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             for row in this_record:
                 writer.writerow(row)
     torch.save(net, model_path)
+
 
 def valid_fn(*, net, val_loader, device):
     """验证函数：输入参数：网络，验证数据，验证性别，验证标签
@@ -333,17 +335,17 @@ def valid_fn(*, net, val_loader, device):
             mae_loss += batch_loss
     return val_total_size, mae_loss
 
-# def loss_map(class_loss, class_num, path):
-#     """"输入参数：各个年龄的损失class_loss，各个年龄的数量class_num，画出每个年龄的误差图"""
-#     data = torch.zeros((230, 1))
-#     for i in range(class_loss.shape[0]):
-#         if class_num[i]:
-#             data[i] = class_loss[i] / class_num[i]
-#     legend = ['MAE']
-#     animator = Animator.Animator(xlabel='month', xlim=[1, 230], legend=legend)
-#     for i in range(data.shape[0]):
-#         animator.add(i, data[i])
-#     animator.save(path)
+def loss_map(class_loss, class_num, path):
+    """"输入参数：各个年龄的损失class_loss，各个年龄的数量class_num，画出每个年龄的误差图"""
+    data = torch.zeros((230, 1))
+    for i in range(class_loss.shape[0]):
+        if class_num[i]:
+            data[i] = class_loss[i] / class_num[i]
+    legend = ['MAE']
+    animator = Animator.Animator(xlabel='month', xlim=[1, 230], legend=legend)
+    for i in range(data.shape[0]):
+        animator.add(i, data[i])
+    animator.save(path)
 
 
 if __name__ == '__main__':
