@@ -84,8 +84,8 @@ class MMCA_module(nn.Module):
 
         x = self.last_conv(x)
         #   F*(1-A) = F - F*A
-        # return (1 - x), (input - input * x)
-        return input - input * x
+        return (1 - x), (input - input * x)
+        # return input - input * x
 
 # 主要任务:生成输入GA模块的feature_map、将feature_map处理后的texture，对性别数据进行编码后的gender_encode
 # 初始化参数：性别编码长度（文中用的32）， 主干网络，输出通道
@@ -102,12 +102,20 @@ class MMANet_BeforeGA(nn.Module):
         # ResNet的前五层分别为：线性层conv2d，bn，ReLU，maxpooling，和第一个sequential
         self.out_channels = out_channels
         self.backbone1 = nn.Sequential(*backbone[0:5])
+        for param in self.backbone1.parameters():
+            param.requires_grad = False
         self.MMCA1 = MMCA_module(256)
         self.backbone2 = backbone[5]
+        for param in self.backbone2.parameters():
+            param.requires_grad = False
         self.MMCA2 = MMCA_module(512, reduction=[4, 8], level=2)
         self.backbone3 = backbone[6]
+        for param in self.backbone3.parameters():
+            param.requires_grad = False
         self.MMCA3 = MMCA_module(1024, reduction=[8, 8], level=2)
         self.backbone4 = backbone[7]
+        for param in self.backbone4.parameters():
+            param.requires_grad = False
         self.MMCA4 = MMCA_module(2048, reduction=[8, 16], level=2)
         # MMCA中的的降维因子的总乘积随着通道数的翻倍，也跟着翻倍，但为什么变成两个，或者为什么大的放后面，这就无从考究了
 
@@ -145,14 +153,14 @@ class MMANet_BeforeGA(nn.Module):
     def forward(self, image, gender):
     # # def forward(self, image):
         # 第一步：用主干网络生成feature_map
-        # AM1, x = self.MMCA1(self.backbone1(image))
-        # AM2, x = self.MMCA2(self.backbone2(x))
-        # AM3, x = self.MMCA3(self.backbone3(x))
-        # AM4, x = self.MMCA4(self.backbone4(x))
-        x = self.backbone1(image)
-        x = self.backbone2(x)
-        x = self.backbone3(x)
-        x = self.backbone4(x)
+        AM1, x = self.MMCA1(self.backbone1(image))
+        AM2, x = self.MMCA2(self.backbone2(x))
+        AM3, x = self.MMCA3(self.backbone3(x))
+        AM4, x = self.MMCA4(self.backbone4(x))
+        # x = self.backbone1(image)
+        # x = self.backbone2(x)
+        # x = self.backbone3(x)
+        # x = self.backbone4(x)
         # 由于MMCA不改变通道数，所以x的shape由原来的NCHW -> N(2048)(H/32)(W/32)
         feature_map = x
 

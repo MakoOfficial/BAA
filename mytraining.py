@@ -17,8 +17,8 @@ if __name__ == '__main__':
     batch_size = 64
     num_epochs = 50
     weight_decay = 0
-    lr_period = 10
-    lr_decay = 0.5
+    lr_period = 3
+    lr_decay = 0.7
     # bone_dir = os.path.join('..', 'data', 'archive', 'testDataset')
     bone_dir = "../archive"
     csv_name = "boneage-training-dataset.csv"
