@@ -46,6 +46,9 @@ def get_net(attention_size=256, feature_channels=2048, output_channels=1024, isE
         MMANet = mymodel.MMANet_BeforeGA(32, *mymodel.get_ResNet())
     return MMANet
 
+def get_freeze_net():
+    return mymodel.MMANet_freezeMMCA(32, *mymodel.get_ResNet())
+
 def sample_normalize(image, **kwargs):
     """标准化每个通道"""
     image = image / 255
