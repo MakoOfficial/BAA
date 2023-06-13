@@ -12,7 +12,9 @@ loss_fn = nn.L1Loss(reduction='sum')
 # criterion = nn.CrossEntropyLoss(reduction='none')
 if __name__ == '__main__':
 
-    net = myKit.get_net(isEnsemble=False)
+    # net = myKit.get_net(isEnsemble=False)
+    # 6.13 MMCA层直接调用训练好的模块
+    net = myKit.get_freeze_net()
     lr = 5e-4
     batch_size = 64
     num_epochs = 50
