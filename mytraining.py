@@ -16,7 +16,7 @@ if __name__ == '__main__':
     # 6.13 MMCA层直接调用训练好的模块
     net = myKit.get_freeze_net()
     lr = 5e-4
-    batch_size = 64
+    batch_size = 32
     num_epochs = 50
     weight_decay = 0
     lr_period = 3
