@@ -281,7 +281,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             loss.backward()
             # backward,update parameter，更新参数
             # 6_3 增大batchsize，若累计8个batch_size更新梯度，或者batch为最后一个batch
-            if (batch_idx + 1) % 4 == 0 or batch_idx == 377 :
+            if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
                 optimizer.step()
                 print('Optimizer step seccessful!! This batch idx: ', batch_idx + 1)
 
