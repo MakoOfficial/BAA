@@ -198,7 +198,7 @@ class MMANet_BeforeGA(nn.Module):
 class MMANet_freezeMMCA(nn.Module):
     def __init__(self, genderSize,  backbone, out_channels) -> None:
         super().__init__()
-        self.net = torch.load('./model_6_9.pth')
+        self.net = torch.load('./pretrained_model.pth')
         self.out_channels = out_channels
         self.backbone1 = nn.Sequential(*backbone[0:5])
         self.backbone2 = backbone[5]
