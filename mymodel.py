@@ -23,7 +23,6 @@ def get_ResNet():
     model = list(model.children())[:-2]
     return model, output_channels
 
-
 #   从小模块开始做起，先是构建一个核大小自定义的卷积模块
 class My_attention(nn.Module):
     """自定义核大小卷积核"""
@@ -194,6 +193,76 @@ class MMANet_BeforeGA(nn.Module):
     # 加入微调函数
     def fine_tune(self, need_fine_tune = True):
         self.train(need_fine_tune)
+
+""" 将MMCA模块固定住，然后进行对resnet的全量微调 """
+class MMANet_freezeMMCA(nn.Module):
+    def __init__(self, genderSize,  backbone, out_channels) -> None:
+        super().__init__()
+        self.net = torch.load('./model_6_9.pth')
+        self.out_channels = out_channels
+        self.backbone1 = nn.Sequential(*backbone[0:5])
+        self.backbone2 = backbone[5]
+        self.backbone3 = backbone[6]
+        self.backbone4 = backbone[7]
+
+        self.gender_encoder = nn.Linear(1, genderSize)
+        
+        self.gender_BN = nn.BatchNorm1d(genderSize)
+
+        self.FC0 = nn.Linear(out_channels + genderSize, 1024)
+        self.BN0 = nn.BatchNorm1d(1024)
+
+        self.FC1 = nn.Linear(1024, 512)
+        self.BN1 = nn.BatchNorm1d(512)
+
+        self.output = nn.Linear(512, 1)
+
+    # 前馈函数，需要输入一个图片，以及性别，不仅需要输出feature map，还需要加入MLP输出分类结果
+    def forward(self, image, gender):
+    # # def forward(self, image):
+        # 第一步：用主干网络生成feature_map
+        AM1, x = self.net.MMCA1(self.backbone1(image))
+        AM2, x = self.net.MMCA2(self.backbone2(x))
+        AM3, x = self.net.MMCA3(self.backbone3(x))
+        AM4, x = self.net.MMCA4(self.backbone4(x))
+        # x = self.backbone1(image)
+        # x = self.backbone2(x)
+        # x = self.backbone3(x)
+        # x = self.backbone4(x)
+        # 由于MMCA不改变通道数，所以x的shape由原来的NCHW -> N(2048)(H/32)(W/32)
+        feature_map = x
+
+        # 第二步：将feature_map降维成texture，这里采用自适应平均池化
+        x = F.adaptive_avg_pool2d(x, 1) # N(2048)(H/32)(W/32) -> N(2048)(1)(1)
+        # 把后面两个1去除，用torch.squeeze
+        x = torch.squeeze(x)
+        # 调整x的形状，使dim=1=输出通道的大小
+        x = x.view(-1, self.out_channels)
+        texture = x
+
+        # 第三步，对性别进行编码，获得gender_encode
+        gender_encode = self.gender_encoder(gender)
+        gender_encode = self.gender_BN(gender_encode)
+        gender_encode = F.relu(gender_encode)
+        # feature_map.shape=N(2048)(H/32)(W/32)
+        # texture.shape = N(2048)
+        # gender_encode.shape = N(32)
+
+        # 2.21 第四步，为这一层的训练做准备，使texture+gender作为输入，放入MLP
+        x = torch.cat([x, gender_encode], dim=1)
+        # output_beforeGA = self.MLP(x)
+        # 拆分MLP
+        x = F.relu(self.BN0(self.FC0(x)))
+        x = F.relu(self.BN1(self.FC1(x)))
+        output_beforeGA = self.output(x)
+
+        # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
+        # return AM1, AM2, AM3, AM4, output_beforeGA
+        return output_beforeGA
+    # 加入微调函数
+    def fine_tune(self, need_fine_tune = True):
+        self.train(need_fine_tune)
+
 # GA模块。目的是对主干网络学习到的feature_map，经过重映射的方式，学习不同层之间的上下文关系
 # class GA(nn.Module):
 #
@@ -359,7 +428,8 @@ if __name__ == '__main__':
     # print(GA_output(feature_map).shape)
     # print(mymodel(x).shape)
 
-    MMANet = MMANet_BeforeGA(32, *get_ResNet())
+    # MMANet = MMANet_BeforeGA(32, *get_ResNet())
+    MMANet = MMANet_freezeMMCA(32, *get_ResNet())
     MMANet = MMANet.cuda()
     # print(sum(p.numel() for p in MMANet.parameters()))
     print(MMANet(x, gender).shape)
