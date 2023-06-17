@@ -317,7 +317,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 def valid_fn(*, net, val_loader, device):
     """验证函数：输入参数：网络，验证数据，验证性别，验证标签
     输出：返回MAE损失"""
-    net.fine_tune(False)
+    net.eval()
     global val_total_size
     val_total_size = torch.tensor([0], dtype=torch.float32)
     global mae_loss
