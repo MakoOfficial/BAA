@@ -271,10 +271,6 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 
             batch_size = len(data[1])
             label = data[1].to(device)
-
-            # zero the parameter gradients，是参数梯度归0
-            optimizer.zero_grad()
-            # forward
             # _, _, _, _, _, _, _, y_pred = net(image, gender)
             y_pred = net(image, gender)
             y_pred = y_pred.squeeze()
@@ -291,6 +287,8 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             # 6_3 增大batchsize，若累计8个batch_size更新梯度，或者batch为最后一个batch
             if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
                 optimizer.step()
+                # zero the parameter gradients，是参数梯度归0
+                optimizer.zero_grad()
                 print('Optimizer step seccessful!! This batch idx: ', batch_idx + 1)
 
             batch_loss = loss.item()
