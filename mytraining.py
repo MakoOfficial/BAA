@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import myKit
+from torchvision.models import resnet50
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -14,13 +15,17 @@ if __name__ == '__main__':
 
     # net = myKit.get_net(isEnsemble=False)
     # 6.13 MMCA层直接调用训练好的模块
-    net = myKit.get_freeze_net()
+    # net = myKit.get_freeze_net()
+    # 6.17 直接使用ResNet50来训练
+    net = resnet50(pretrained=True)
+    for params in net.parameters():
+        params.requires_grad = True
     lr = 5e-4
     batch_size = 32
     num_epochs = 50
-    weight_decay = 0
-    lr_period = 3
-    lr_decay = 0.7
+    weight_decay = 0.9
+    lr_period = 10
+    lr_decay = 0.5
     # bone_dir = os.path.join('..', 'data', 'archive', 'testDataset')
     bone_dir = "../archive"
     csv_name = "boneage-training-dataset.csv"

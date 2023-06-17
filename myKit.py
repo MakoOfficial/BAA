@@ -21,6 +21,7 @@ from d2l import torch as d2l
 import csv
 import time
 from sklearn.model_selection import train_test_split
+import random
 
 """本文档主要是解决训练过程中的一些所用到的函数的集合
 函数列表：
@@ -33,6 +34,11 @@ from sklearn.model_selection import train_test_split
 # train_df = pd.read_csv('../data/archive/testDataset/train-dataset.csv')
 # boneage_mean = train_df['boneage'].mean()
 # boneage_div = train_df['boneage'].std()
+def seed_everything(seed=1234):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 def get_net(attention_size=256, feature_channels=2048, output_channels=1024, isEnsemble=True):
     """获取神经网络，attention_size是指注意力机制Q，K矩阵的长度（default=256）， feature_channels为MMAC输出的通道数（default=2048），output_channels为GA模块输出的注意力图通道数（default=1024）
@@ -69,7 +75,7 @@ def randomErase(image, **kwargs):
 transform_train = Compose([
     # 训练集的数据增广
     # 随机大小裁剪，512为调整后的图片大小，（0.5,1.0）为scale剪切的占比范围，概率p为0.5
-    # RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
+    RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
     # ShiftScaleRotate操作：仿射变换，shift为平移，scale为缩放比率，rotate为旋转角度范围，border_mode用于外推法的标记，value即为padding_value，前者用到的，p为概率
     ShiftScaleRotate(shift_limit=0.2, scale_limit=0.2, rotate_limit=20, border_mode=cv2.BORDER_CONSTANT, value=0.0,
                      p=0.8),
@@ -80,9 +86,9 @@ transform_train = Compose([
     # 标准化
     Lambda(image=sample_normalize),
     # 将图片转化为tensor类型
-    ToTensorV2()
+    ToTensorV2(),
     # 做随机擦除
-    # Lambda(image=randomErase)
+    Lambda(image=randomErase)
 ])
 
 transform_valid = Compose([
@@ -134,12 +140,14 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     stratify=age_df['boneage_category']
     )
     print('train', raw_train_df.shape[0], 'validation', valid_df.shape[0])
-    train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
+
+    # train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
     # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
-    print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
-    train_df.to_csv("train.csv")
-    valid_df.to_csv("valid.csv")
-    return train_df, valid_df
+    # print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
+
+    raw_train_df.to_csv("raw_train_6_17.csv")
+    valid_df.to_csv("valid_6_17.csv")
+    return raw_train_df, valid_df
     # return train_df, valid_df, boneage_mean, boneage_div
 
 # create 'dataset's subclass,we can read a picture when we need in training trough this way
@@ -362,7 +370,12 @@ if __name__ == '__main__':
     # print(sum(p.numel() for p in MMANet.parameters()))
     # params = list(MMANet.MLP.parameters())
     # print(params)
-    bone_dir = "F:\GitCode\BoneAgeAss-main\data/archive/testDataset"
-    csv_name = "boneage-traning-dataset.csv"
-    train_df, valid_df = split_data(bone_dir, csv_name, 10, 0.1, 10)
-    print("boneage_mean = ", boneage_mean, "boneage_div", boneage_div)
+
+    # bone_dir = "F:\GitCode\BoneAgeAss-main\data/archive/testDataset"
+    # csv_name = "boneage-traning-dataset.csv"
+    # train_df, valid_df = split_data(bone_dir, csv_name, 10, 0.1, 10)
+    # print("boneage_mean = ", boneage_mean, "boneage_div", boneage_div)
+
+    x = read_image('E:\code/archive/boneage-training-dataset/1435.png')
+    x = transform_train(image=x)
+    print(x)
