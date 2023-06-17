@@ -215,7 +215,13 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
         writer = csv.writer(csvfile)
         for row in record:
             writer.writerow(row)
-    device = try_gpu()
+    devices = d2l.try_all_gpus()
+    # 增加多卡训练
+    net = nn.DataParallel(net, device_ids=devices)
+
+    ## Network, optimizer, and loss function creation
+    net = net.to(devices)
+    
     # 数据读取
     # Creates dataloaders, which load data in batches
     # Note: test loader is not shuffled or sampled
@@ -223,17 +229,15 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
+        num_workers=6,
         drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=batch_size,
+        num_workers=6,
         shuffle=False)
 
-
-    ## Network, optimizer, and loss function creation
-    net = net.to(device)
-    net = net.train()
 
     #   loss_fn =  nn.MSELoss(reduction = 'sum')
     # loss_fn = nn.L1Loss(reduction='sum')
@@ -249,6 +253,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
     ## Trains
 
     for epoch in range(num_epochs):
+        net.train()
         print(epoch)
         this_record = []
         global training_loss
@@ -261,19 +266,20 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
         start_time = time.time()
         # 在不同的设备上运行该模型
 
-        #   打开微调
-        net.fine_tune()
         #   enumerate()，为括号中序列构建索引
         for batch_idx, data in enumerate(train_loader):
             # #put data to GPU
             image, gender = data[0]
-            image, gender = image.type(torch.FloatTensor).to(device), gender.type(torch.FloatTensor).to(device)
+            image, gender = image.type(torch.FloatTensor).to(devices[0]), gender.type(torch.FloatTensor).to(devices[0])
 
             batch_size = len(data[1])
-            label = data[1].to(device)
+            label = data[1].to(devices[0])
             # _, _, _, _, _, _, _, y_pred = net(image, gender)
             y_pred = net(image, gender)
             y_pred = y_pred.squeeze()
+
+            # zero the parameter gradients，是参数梯度归0
+            optimizer.zero_grad()
 
             # print(y_pred, label)，求损失
             loss = loss_fn(y_pred, label)
@@ -285,11 +291,8 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             loss.backward()
             # backward,update parameter，更新参数
             # 6_3 增大batchsize，若累计8个batch_size更新梯度，或者batch为最后一个batch
-            if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
-                optimizer.step()
-                # zero the parameter gradients，是参数梯度归0
-                optimizer.zero_grad()
-                print('Optimizer step seccessful!! This batch idx: ', batch_idx + 1)
+            # if (batch_idx + 1) % 8 == 0 or batch_idx == 377 :
+            optimizer.step()
 
             batch_loss = loss.item()
 
@@ -299,7 +302,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 
         ## Evaluation
         # Sets net to eval and no grad context
-        val_total_size, mae_loss = valid_fn(net=net, val_loader=val_loader, device=device)
+        val_total_size, mae_loss = valid_fn(net=net, val_loader=val_loader, device=devices)
         # accuracy_num = accuracy(pred_list[1:, :], grand_age[1:])
         
         train_loss, val_mae = training_loss / total_size, mae_loss / val_total_size
@@ -314,7 +317,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
     torch.save(net, model_path)
 
 
-def valid_fn(*, net, val_loader, device):
+def valid_fn(*, net, val_loader, devices):
     """验证函数：输入参数：网络，验证数据，验证性别，验证标签
     输出：返回MAE损失"""
     net.eval()
@@ -328,9 +331,9 @@ def valid_fn(*, net, val_loader, device):
             val_total_size += len(data[1])
 
             image, gender = data[0]
-            image, gender = image.type(torch.FloatTensor).to(device), gender.type(torch.FloatTensor).to(device)
+            image, gender = image.type(torch.FloatTensor).to(devices), gender.type(torch.FloatTensor).to(devices)
 
-            label = data[1].type(torch.FloatTensor).to(device)
+            label = data[1].type(torch.FloatTensor).to(devices)
 
             #   net内求出的是normalize后的数据，这里应该是是其还原，而不是直接net（）
             y_pred = net(image, gender)
