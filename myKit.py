@@ -158,7 +158,7 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
     # train_df = raw_train_df.groupby(['boneage_category']).apply(lambda x: x)
     # print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
-    train_df.to_csv("train.csv")
+    raw_train_df.to_csv("train.csv")
     valid_df.to_csv("valid.csv")
     return raw_train_df, valid_df
     # return train_df, valid_df, boneage_mean, boneage_div
@@ -233,7 +233,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
     net = nn.DataParallel(net, device_ids=devices)
 
     ## Network, optimizer, and loss function creation
-    net = net.to(devices)
+    net = net.to(devices[0])
     
     # 数据读取
     # Creates dataloaders, which load data in batches
@@ -315,7 +315,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 
         ## Evaluation
         # Sets net to eval and no grad context
-        val_total_size, mae_loss = valid_fn(net=net, val_loader=val_loader, device=devices)
+        val_total_size, mae_loss = valid_fn(net=net, val_loader=val_loader, devices=devices)
         # accuracy_num = accuracy(pred_list[1:, :], grand_age[1:])
         
         train_loss, val_mae = training_loss / total_size, mae_loss / val_total_size
@@ -344,9 +344,9 @@ def valid_fn(*, net, val_loader, devices):
             val_total_size += len(data[1])
 
             image, gender = data[0]
-            image, gender = image.type(torch.FloatTensor).to(devices), gender.type(torch.FloatTensor).to(devices)
+            image, gender = image.type(torch.FloatTensor).to(devices[0]), gender.type(torch.FloatTensor).to(devices[0])
 
-            label = data[1].type(torch.FloatTensor).to(devices)
+            label = data[1].type(torch.FloatTensor).to(devices[0])
 
             #   net内求出的是normalize后的数据，这里应该是是其还原，而不是直接net（）
             y_pred = net(image, gender)
