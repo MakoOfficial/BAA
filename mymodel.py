@@ -101,20 +101,12 @@ class MMANet_BeforeGA(nn.Module):
         # ResNet的前五层分别为：线性层conv2d，bn，ReLU，maxpooling，和第一个sequential
         self.out_channels = out_channels
         self.backbone1 = nn.Sequential(*backbone[0:5])
-        for param in self.backbone1.parameters():
-            param.requires_grad = False
         self.MMCA1 = MMCA_module(256)
         self.backbone2 = backbone[5]
-        for param in self.backbone2.parameters():
-            param.requires_grad = False
         self.MMCA2 = MMCA_module(512, reduction=[4, 8], level=2)
         self.backbone3 = backbone[6]
-        for param in self.backbone3.parameters():
-            param.requires_grad = False
         self.MMCA3 = MMCA_module(1024, reduction=[8, 8], level=2)
         self.backbone4 = backbone[7]
-        for param in self.backbone4.parameters():
-            param.requires_grad = False
         self.MMCA4 = MMCA_module(2048, reduction=[8, 16], level=2)
         # MMCA中的的降维因子的总乘积随着通道数的翻倍，也跟着翻倍，但为什么变成两个，或者为什么大的放后面，这就无从考究了
 
