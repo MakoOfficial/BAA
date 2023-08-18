@@ -186,6 +186,93 @@ class MMANet_BeforeGA(nn.Module):
     def fine_tune(self, need_fine_tune = True):
         self.train(need_fine_tune)
 
+class myres(nn.Module):
+    """主模型MMANet的在输入到GA前的部分"""
+    # 不在类内定义主干网络是因为怕梯度损失吗
+    def __init__(self, genderSize, backbone, out_channels) -> None:
+        super().__init__()
+        # self.resnet50 = get_ResNet()
+        # 共有四块MMCA，所以这里分成四块来写，每块的主干部分和MMCA分开
+        # 注意点：resnet总共四个sequential，输出通道分别是256, 512, 1024, 2048，这也确定MMCA的输入通道，但经过四层后高宽除以32
+        # ResNet的前五层分别为：线性层conv2d，bn，ReLU，maxpooling，和第一个sequential
+        self.out_channels = out_channels
+        self.backbone1 = nn.Sequential(*backbone[0:8])
+        # MMCA中的的降维因子的总乘积随着通道数的翻倍，也跟着翻倍，但为什么变成两个，或者为什么大的放后面，这就无从考究了
+
+        # 性别编码
+        self.gender_encoder = nn.Linear(1, genderSize)
+        # 由于标签变成了独热，估改输入为2
+        # self.gender_encoder = nn.Linear(2, genderSize)
+        self.gender_BN = nn.BatchNorm1d(genderSize)
+
+        # 2.21新增，在GA模块之前就对resnet+MMCA进行训练，所以这里就添加MLP层
+        # self.MLP = nn.Sequential(
+        #     nn.Linear(out_channels + genderSize, 1024),
+        #     # nn.Linear(out_channels, 1024),
+        #     nn.BatchNorm1d(1024),
+        #     nn.ReLU(),
+        #     nn.Linear(1024, 512),
+        #     nn.BatchNorm1d(512),
+        #     nn.ReLU(),
+        #     # 3_20改，将结果输出为一个长为230的向量，而不是一个单独的数字
+        #     nn.Linear(512, 1)
+        #     # nn.Linear(512, 230),
+        #     # nn.BatchNorm1d(230),
+        #     # nn.ReLU(),
+        #     # nn.Linear(230, 1)
+        #     # nn.Softmax()
+        self.FC0 = nn.Linear(out_channels + genderSize, 1024)
+        self.BN0 = nn.BatchNorm1d(1024)
+
+        self.FC1 = nn.Linear(1024, 512)
+        self.BN1 = nn.BatchNorm1d(512)
+
+        self.output = nn.Linear(512, 1)
+
+    # 前馈函数，需要输入一个图片，以及性别，不仅需要输出feature map，还需要加入MLP输出分类结果
+    def forward(self, image, gender):
+    # # def forward(self, image):
+        # 第一步：用主干网络生成feature_map
+        x = self.backbone1(image)
+        # x = self.backbone1(image)
+        # x = self.backbone2(x)
+        # x = self.backbone3(x)
+        # x = self.backbone4(x)
+        # 由于MMCA不改变通道数，所以x的shape由原来的NCHW -> N(2048)(H/32)(W/32)
+        feature_map = x
+
+        # 第二步：将feature_map降维成texture，这里采用自适应平均池化
+        x = F.adaptive_avg_pool2d(x, 1) # N(2048)(H/32)(W/32) -> N(2048)(1)(1)
+        # 把后面两个1去除，用torch.squeeze
+        x = torch.squeeze(x)
+        # 调整x的形状，使dim=1=输出通道的大小
+        x = x.view(-1, self.out_channels)
+        texture = x
+
+        # 第三步，对性别进行编码，获得gender_encode
+        gender_encode = self.gender_encoder(gender)
+        gender_encode = self.gender_BN(gender_encode)
+        gender_encode = F.relu(gender_encode)
+        # feature_map.shape=N(2048)(H/32)(W/32)
+        # texture.shape = N(2048)
+        # gender_encode.shape = N(32)
+
+        # 2.21 第四步，为这一层的训练做准备，使texture+gender作为输入，放入MLP
+        x = torch.cat([x, gender_encode], dim=1)
+        # output_beforeGA = self.MLP(x)
+        # 拆分MLP
+        x = F.relu(self.BN0(self.FC0(x)))
+        x = F.relu(self.BN1(self.FC1(x)))
+        output_beforeGA = self.output(x)
+
+        # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
+        # return AM1, AM2, AM3, AM4, output_beforeGA
+        return output_beforeGA
+    # 加入微调函数
+    def fine_tune(self, need_fine_tune = True):
+        self.train(need_fine_tune)
+
+
 """ 将MMCA模块固定住，然后进行对resnet的全量微调 """
 class MMANet_freezeMMCA(nn.Module):
     def __init__(self, genderSize,  backbone, out_channels) -> None:
