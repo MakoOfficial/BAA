@@ -40,7 +40,7 @@ def seed_everything(seed=1234):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-def get_net(attention_size=256, feature_channels=2048, output_channels=1024, isEnsemble=True):
+def get_net():
     """获取神经网络，attention_size是指注意力机制Q，K矩阵的长度（default=256）， feature_channels为MMAC输出的通道数（default=2048），output_channels为GA模块输出的注意力图通道数（default=1024）
     isEnsemble是指调用的是整体MMANet（default=TRUE），若值为False，则只调用前半部分的ResNet+MMCA"""
     # if isEnsemble:

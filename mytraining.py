@@ -15,7 +15,7 @@ if __name__ == '__main__':
 
     # net = myKit.get_net(isEnsemble=False)
     # 6.13 MMCA层直接调用训练好的模块
-    net = myKit.get_freeze_net()
+    net = myKit.get_net()
     # 6.17 直接使用ResNet50来训练
     # net = resnet50(pretrained=True)
     lr = 5e-4
