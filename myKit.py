@@ -308,8 +308,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 
             training_loss += batch_loss
             total_size += batch_size
-            print(f"when train time, boneage_div:{boneage_div}, boneage_mean:{boneage_mean}")
-            # print('epoch', epoch+1, '; ', batch_idx+1,' batch loss:', batch_loss / batch_size)
+            print('epoch', epoch+1, '; ', batch_idx+1,' batch loss:', batch_loss / batch_size)
 
         ## Evaluation
         # Sets net to eval and no grad context
