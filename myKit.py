@@ -52,9 +52,6 @@ def get_net():
     MMANet = mymodel.myres(32, *mymodel.get_ResNet())
     return MMANet
 
-def get_freeze_net():
-    return mymodel.MMANet_freezeMMCA(32, *mymodel.get_ResNet())
-
 def sample_normalize(image, **kwargs):
     """标准化每个通道"""
     image = image / 255
@@ -134,7 +131,7 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     boneage_div = selected_df['boneage'].std()
     selected_df['zscore'] = selected_df['boneage'].map(lambda x: (x-boneage_mean)/boneage_div)
     selected_df.dropna(inplace = True)
-    selected_df['boneage_category'] = pd.cut(age_df['boneage'], category_num-10)
+    selected_df['boneage_category'] = pd.cut(age_df['boneage'], int(category_num-10))
 
     # global boneage_mean
     # boneage_mean = age_df['boneage'].mean()
@@ -311,7 +308,8 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 
             training_loss += batch_loss
             total_size += batch_size
-            print('epoch', epoch+1, '; ', batch_idx+1,' batch loss:', batch_loss / batch_size)
+            print(f"when train time, boneage_div:{boneage_div}, boneage_mean:{boneage_mean}")
+            # print('epoch', epoch+1, '; ', batch_idx+1,' batch loss:', batch_loss / batch_size)
 
         ## Evaluation
         # Sets net to eval and no grad context
