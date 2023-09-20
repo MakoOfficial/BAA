@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import myKit
-from torchvision.models import resnet50
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -21,7 +20,7 @@ if __name__ == '__main__':
     lr = 5e-4
     batch_size = 8
     num_epochs = 50
-    weight_decay = 0.9
+    weight_decay = 0.0001
     lr_period = 10
     lr_decay = 0.5
     # bone_dir = os.path.join('..', 'data', 'archive', 'testDataset')

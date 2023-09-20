@@ -111,7 +111,9 @@ def read_image(file_path, image_size=512):
     # 转化成np.array
     return np.array(ImageOps.expand(img, padding).convert("RGB"))
 
+
 def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
+    """重构数据级结构"""
     age_df = pd.read_csv(os.path.join(data_dir, csv_name))
     age_df['path'] = age_df['id'].map(lambda x: os.path.join(data_dir,
                                                             csv_name.split('.')[0],
@@ -210,12 +212,6 @@ def try_gpu(i=0):
         return torch.device(f'cuda:{i}')
     return torch.device('cpu')
 
-# def accuracy(y_hat, y):
-#     """得出精确数量"""
-#     if len(y_hat.shape) > 1 and y_hat.shape[1] > 1:
-#         y_hat = d2l.argmax(y_hat, axis=1)
-#     cmp = d2l.astype(y_hat, y.dtype) == y
-#     return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
 
 def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_decay, loss_fn, batch_size=32, model_path="./model.pth", record_path="./RECORD.csv"):
     """将训练函数和验证函数杂糅在一起的垃圾函数"""
@@ -245,11 +241,12 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
     val_loader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=batch_size,
+        drop_last=True,
         num_workers=6,
         shuffle=False)
 
 
-    #   loss_fn =  nn.MSELoss(reduction = 'sum')
+    # loss_fn =  nn.MSELoss(reduction = 'sum')
     # loss_fn = nn.L1Loss(reduction='sum')
     lr = lr
 
