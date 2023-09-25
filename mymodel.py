@@ -83,7 +83,7 @@ class MMCA_module(nn.Module):
 
         x = self.last_conv(x)
         #   F*(1-A) = F - F*A
-        return (1 - x), (input - input * x)
+        return (1 - x), input * (1 - x)
         # return input - input * x
 
 # 主要任务:生成输入GA模块的feature_map、将feature_map处理后的texture，对性别数据进行编码后的gender_encode
@@ -138,7 +138,7 @@ class MMANet_BeforeGA(nn.Module):
         self.FC1 = nn.Linear(1024, 512)
         self.BN1 = nn.BatchNorm1d(512)
 
-        self.output = nn.Linear(512, 1)
+        self.output = nn.Linear(512, 240)
 
     # 前馈函数，需要输入一个图片，以及性别，不仅需要输出feature map，还需要加入MLP输出分类结果
     def forward(self, image, gender):
@@ -178,7 +178,9 @@ class MMANet_BeforeGA(nn.Module):
         x = F.relu(self.BN0(self.FC0(x)))
         x = F.relu(self.BN1(self.FC1(x)))
         output_beforeGA = self.output(x)
-
+        output_beforeGA = F.softmax(output_beforeGA)
+        distribute = torch.arange(0, 240)
+        output_beforeGA = (output_beforeGA*distribute).sum(dim=1)
         # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
         # return AM1, AM2, AM3, AM4, output_beforeGA
         return output_beforeGA
@@ -196,7 +198,7 @@ class myres(nn.Module):
         # 注意点：resnet总共四个sequential，输出通道分别是256, 512, 1024, 2048，这也确定MMCA的输入通道，但经过四层后高宽除以32
         # ResNet的前五层分别为：线性层conv2d，bn，ReLU，maxpooling，和第一个sequential
         self.out_channels = out_channels
-        self.backbone1 = nn.Sequential(*backbone[0:8])
+        self.backbone = backbone
         # MMCA中的的降维因子的总乘积随着通道数的翻倍，也跟着翻倍，但为什么变成两个，或者为什么大的放后面，这就无从考究了
 
         # 性别编码
@@ -227,7 +229,8 @@ class myres(nn.Module):
         self.FC1 = nn.Linear(1024, 512)
         self.BN1 = nn.BatchNorm1d(512)
 
-        self.output = nn.Linear(512, 1)
+        # self.output = nn.Linear(512, 1)
+        self.output = nn.Linear(512, 240)
 
     # 前馈函数，需要输入一个图片，以及性别，不仅需要输出feature map，还需要加入MLP输出分类结果
     def forward(self, image, gender):
@@ -265,6 +268,9 @@ class myres(nn.Module):
         x = F.relu(self.BN1(self.FC1(x)))
         output_beforeGA = self.output(x)
 
+        output_beforeGA = F.softmax(output_beforeGA)
+        distribute = torch.arange(0, 240)
+        output_beforeGA = (output_beforeGA*distribute).sum(dim=1)
         # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
         # return AM1, AM2, AM3, AM4, output_beforeGA
         return output_beforeGA

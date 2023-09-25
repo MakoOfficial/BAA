@@ -49,7 +49,8 @@ def get_net():
     #     GA = mymodel.GA(attention_size, feature_channels, output_channels, MMANet_beforeGA)
     #     MMANet = mymodel.MMANet(GA)
     # else:
-    MMANet = mymodel.myres(32, *mymodel.get_ResNet())
+    # MMANet = mymodel.myres(32, *mymodel.get_ResNet())
+    MMANet = mymodel.MMANet_BeforeGA(32, *mymodel.get_ResNet())
     return MMANet
 
 def sample_normalize(image, **kwargs):
@@ -72,7 +73,7 @@ def randomErase(image, **kwargs):
 transform_train = Compose([
     # 训练集的数据增广
     # 随机大小裁剪，512为调整后的图片大小，（0.5,1.0）为scale剪切的占比范围，概率p为0.5
-    RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
+    # RandomResizedCrop(512, 512, (0.5, 1.0), p=0.5),
     # ShiftScaleRotate操作：仿射变换，shift为平移，scale为缩放比率，rotate为旋转角度范围，border_mode用于外推法的标记，value即为padding_value，前者用到的，p为概率
     ShiftScaleRotate(shift_limit=0.2, scale_limit=0.2, rotate_limit=20, border_mode=cv2.BORDER_CONSTANT, value=0.0,
                      p=0.8),
@@ -161,6 +162,14 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     valid_df.to_csv("valid.csv")
     return raw_train_df, valid_df
     # return train_df, valid_df, boneage_mean, boneage_div
+
+def soften_labels(l, x):
+    "soften the label distribution"
+    a = torch.arange(0,240)
+    a = 1 - torch.abs(a - x)/l
+    relu = nn.ReLU()
+    a = relu(a)
+    return a
 
 # create 'dataset's subclass,we can read a picture when we need in training trough this way
 class BAATrainDataset(Dataset.Dataset):
