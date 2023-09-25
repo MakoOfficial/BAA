@@ -269,7 +269,7 @@ class myres(nn.Module):
         output_beforeGA = self.output(x)
 
         output_beforeGA = F.softmax(output_beforeGA)
-        distribute = (torch.arange(0, 240)-mean)/div)
+        distribute = ((torch.arange(0, 240)-mean)/div).cuda()
         output_beforeGA = (output_beforeGA*distribute).sum(dim=1)
         # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
         # return AM1, AM2, AM3, AM4, output_beforeGA
