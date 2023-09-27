@@ -49,8 +49,8 @@ def get_net():
     #     GA = mymodel.GA(attention_size, feature_channels, output_channels, MMANet_beforeGA)
     #     MMANet = mymodel.MMANet(GA)
     # else:
-    # MMANet = mymodel.myres(32, *mymodel.get_ResNet())
-    MMANet = mymodel.MMANet_BeforeGA(32, *mymodel.get_ResNet())
+    MMANet = mymodel.myres(32, *mymodel.get_ResNet())
+    # MMANet = mymodel.MMANet_BeforeGA(32, *mymodel.get_ResNet())
     return MMANet
 
 def sample_normalize(image, **kwargs):

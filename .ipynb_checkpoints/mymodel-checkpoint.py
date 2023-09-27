@@ -198,7 +198,7 @@ class myres(nn.Module):
         # 注意点：resnet总共四个sequential，输出通道分别是256, 512, 1024, 2048，这也确定MMCA的输入通道，但经过四层后高宽除以32
         # ResNet的前五层分别为：线性层conv2d，bn，ReLU，maxpooling，和第一个sequential
         self.out_channels = out_channels
-        self.backbone = backbone
+        self.backbone = nn.Sequential(*backbone)
         # MMCA中的的降维因子的总乘积随着通道数的翻倍，也跟着翻倍，但为什么变成两个，或者为什么大的放后面，这就无从考究了
 
         # 性别编码
@@ -236,7 +236,7 @@ class myres(nn.Module):
     def forward(self, image, gender, mean, div):
     # # def forward(self, image):
         # 第一步：用主干网络生成feature_map
-        x = self.backbone1(image)
+        x = self.backbone(image)
         # x = self.backbone1(image)
         # x = self.backbone2(x)
         # x = self.backbone3(x)
@@ -269,7 +269,7 @@ class myres(nn.Module):
         output_beforeGA = self.output(x)
 
         output_beforeGA = F.softmax(output_beforeGA)
-        distribute = (torch.arange(0, 240)-mean)/div)
+        distribute = ((torch.arange(0, 240)-mean)/div).cuda()
         output_beforeGA = (output_beforeGA*distribute).sum(dim=1)
         # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
         # return AM1, AM2, AM3, AM4, output_beforeGA
