@@ -124,43 +124,46 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     age_df['male'] = age_df['male'].astype('float32')
     age_df['gender'] = age_df['male'].map(lambda x:'male' if x else 'female')
 
-    age_df['Bin'] = pd.cut(age_df['boneage'], category_num, labels=False)
-    lower_bound = age_df['Bin'].min() + 5
-    upper_bound = age_df['Bin'].max() - 5
-    selected_df = age_df[age_df['Bin'].between(lower_bound, upper_bound)]
-    global boneage_mean
-    boneage_mean = selected_df['boneage'].mean()
-    global boneage_div
-    boneage_div = selected_df['boneage'].std()
-    selected_df['zscore'] = selected_df['boneage'].map(lambda x: (x-boneage_mean)/boneage_div)
-    selected_df.dropna(inplace = True)
-    selected_df['boneage_category'] = pd.cut(age_df['boneage'], int(category_num-10))
-
+    # disable the selected data-category
+    # age_df['Bin'] = pd.cut(age_df['boneage'], category_num, labels=False)
+    # lower_bound = age_df['Bin'].min() + 5
+    # upper_bound = age_df['Bin'].max() - 5
+    # selected_df = age_df[age_df['Bin'].between(lower_bound, upper_bound)]
     # global boneage_mean
-    # boneage_mean = age_df['boneage'].mean()
+    # boneage_mean = selected_df['boneage'].mean()
     # global boneage_div
-    # boneage_div = age_df['boneage'].std()
+    # boneage_div = selected_df['boneage'].std()
+    # selected_df['zscore'] = selected_df['boneage'].map(lambda x: (x-boneage_mean)/boneage_div)
+    # selected_df.dropna(inplace = True)
+    # selected_df['boneage_category'] = pd.cut(age_df['boneage'], int(category_num-10))
+
+    global boneage_mean
+    boneage_mean = age_df['boneage'].mean()
+    global boneage_div
+    boneage_div = age_df['boneage'].std()
     # we don't want normalization for now
     # boneage_mean = 0
     # boneage_div = 1.0
-    # age_df['zscore'] = age_df['boneage'].map(lambda x: (x-boneage_mean)/boneage_div)
-    # age_df.dropna(inplace = True)
-    # age_df['boneage_category'] = pd.cut(age_df['boneage'], category_num)
+    age_df['zscore'] = age_df['boneage'].map(lambda x: (x-boneage_mean)/boneage_div)
+    age_df.dropna(inplace = True)
+    age_df['boneage_category'] = pd.cut(age_df['boneage'], category_num)
 
     raw_train_df, valid_df = train_test_split(
-    selected_df,
+    age_df,
     test_size=split_ratio,
     random_state=2023,
-    stratify=selected_df['boneage_category']
+    stratify=age_df['boneage_category']
     )
     print('train', raw_train_df.shape[0], 'validation', valid_df.shape[0])
-    # train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
+    train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
     # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
     # train_df = raw_train_df.groupby(['boneage_category']).apply(lambda x: x)
-    # print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
-    raw_train_df.to_csv("train.csv")
+    print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
+    # raw_train_df.to_csv("train.csv")
+    train_df.to_csv("train.csv")
     valid_df.to_csv("valid.csv")
-    return raw_train_df, valid_df
+    # return raw_train_df, valid_df
+    return train_df, valid_df
     # return train_df, valid_df, boneage_mean, boneage_div
 
 def soften_labels(l, x):
