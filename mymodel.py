@@ -32,6 +32,7 @@ class My_attention(nn.Module):
         self.my_attention = nn.Sequential(
             nn.Conv2d(input_channels, 1, kernel_size=kernel_size, padding=kernel_size // 2),
             nn.ReLU()
+            # nn.Sigmoid()
         )
 
     #   作为一个卷积模块，那么需要输入是必然的，所以forward函数必需要有输入数据集
@@ -75,7 +76,7 @@ class MMCA_module(nn.Module):
 
     def forward(self, x):
         #   由于需要利用互补注意力公式：F*(1-A)，这里需要先存储一下输入F
-        input = x
+        input = x.clone()
         #   显示进入DR层
         x = self.DR(x)
         #   将MRA1、MRA3、MRA5的输出cancat在一起
@@ -83,8 +84,8 @@ class MMCA_module(nn.Module):
 
         x = self.last_conv(x)
         #   F*(1-A) = F - F*A
-        return (1 - x), input * (1 - x)
-        # return input - input * x
+        # return (1 - x), (input - input * x)
+        return (input - input * x)
 
 # 主要任务:生成输入GA模块的feature_map、将feature_map处理后的texture，对性别数据进行编码后的gender_encode
 # 初始化参数：性别编码长度（文中用的32）， 主干网络，输出通道
@@ -139,15 +140,20 @@ class MMANet_BeforeGA(nn.Module):
         self.BN1 = nn.BatchNorm1d(512)
 
         self.output = nn.Linear(512, 240)
+        # self.Softmax = nn.Softmax()
 
     # 前馈函数，需要输入一个图片，以及性别，不仅需要输出feature map，还需要加入MLP输出分类结果
     def forward(self, image, gender):
     # # def forward(self, image):
         # 第一步：用主干网络生成feature_map
-        AM1, x = self.MMCA1(self.backbone1(image))
-        AM2, x = self.MMCA2(self.backbone2(x))
-        AM3, x = self.MMCA3(self.backbone3(x))
-        AM4, x = self.MMCA4(self.backbone4(x))
+        # AM1, x = self.MMCA1(self.backbone1(image))
+        # AM2, x = self.MMCA2(self.backbone2(x))
+        # AM3, x = self.MMCA3(self.backbone3(x))
+        # AM4, x = self.MMCA4(self.backbone4(x))
+        x = self.MMCA1(self.backbone1(image))
+        x = self.MMCA2(self.backbone2(x))
+        x = self.MMCA3(self.backbone3(x))
+        x = self.MMCA4(self.backbone4(x))
         # x = self.backbone1(image)
         # x = self.backbone2(x)
         # x = self.backbone3(x)
@@ -179,8 +185,8 @@ class MMANet_BeforeGA(nn.Module):
         x = F.relu(self.BN1(self.FC1(x)))
         output_beforeGA = self.output(x)
         output_beforeGA = F.softmax(output_beforeGA)
-        distribute = torch.arange(0, 240)
-        output_beforeGA = (output_beforeGA*distribute).sum(dim=1)
+        # distribute = torch.arange(0, 240)
+        # output_beforeGA = (output_beforeGA*distribute).sum(dim=1)
         # return AM1, AM2, AM3, AM4, feature_map, texture, gender_encode, output_beforeGA
         # return AM1, AM2, AM3, AM4, output_beforeGA
         return output_beforeGA

@@ -112,6 +112,12 @@ def read_image(file_path, image_size=512):
     # 转化成np.array
     return np.array(ImageOps.expand(img, padding).convert("RGB"))
 
+def one_hot(x):
+    """"encode the label to one-hot label"""
+    label = torch.zeros(240)
+    label[int(x)] = 1
+
+    return label
 
 def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     """重构数据级结构"""
@@ -155,15 +161,15 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
     stratify=age_df['boneage_category']
     )
     print('train', raw_train_df.shape[0], 'validation', valid_df.shape[0])
-    train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
+    # train_df = raw_train_df.groupby(['boneage_category', 'male']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
     # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
     # train_df = raw_train_df.groupby(['boneage_category']).apply(lambda x: x)
-    print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
-    # raw_train_df.to_csv("train.csv")
-    train_df.to_csv("train.csv")
+    # print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
+    raw_train_df.to_csv("train.csv")
+    # train_df.to_csv("train.csv")
     valid_df.to_csv("valid.csv")
-    # return raw_train_df, valid_df
-    return train_df, valid_df
+    return raw_train_df, valid_df
+    # return train_df, valid_df
     # return train_df, valid_df, boneage_mean, boneage_div
 
 def soften_labels(l, x):
@@ -185,8 +191,9 @@ class BAATrainDataset(Dataset.Dataset):
         row = self.df.iloc[index]
         num = int(row['id'])
         # return (transform_train(image=read_iamge(self.file_path, f"{num}.png"))['image'], Tensor([row['male']])), row['boneage']
-        return (transform_train(image=read_image(row["path"]))['image'], Tensor([row['male']])), row[
-            'zscore']
+        # return (transform_train(image=read_image(row["path"]))['image'], Tensor([row['male']])), row[
+            # 'zscore']
+        return (transform_train(image=read_image(row["path"]))['image'], Tensor([row['male']])), one_hot(row["boneage"])
 
     def __len__(self):
         return len(self.df)
@@ -260,6 +267,7 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
 
     # loss_fn =  nn.MSELoss(reduction = 'sum')
     # loss_fn = nn.L1Loss(reduction='sum')
+    loss_fn = nn.BCELoss(reduction="sum")
     lr = lr
 
     optimizer = torch.optim.Adam(net.parameters(), lr=lr, weight_decay=wd)
@@ -294,8 +302,8 @@ def map_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, lr_
             batch_size = len(data[1])
             label = data[1].to(devices[0])
             # _, _, _, _, _, _, _, y_pred = net(image, gender)
-            y_pred = net(image, gender, boneage_mean, boneage_div)
-            y_pred = y_pred.squeeze()
+            y_pred = net(image, gender)
+            # y_pred = y_pred.squeeze()
 
             # zero the parameter gradients，是参数梯度归0
             optimizer.zero_grad()
@@ -355,11 +363,11 @@ def valid_fn(*, net, val_loader, devices):
             label = data[1].type(torch.FloatTensor).to(devices[0])
 
             #   net内求出的是normalize后的数据，这里应该是是其还原，而不是直接net（）
-            y_pred = net(image, gender, boneage_mean, boneage_div)
+            y_pred = net(image, gender)
             y_pred = y_pred.cpu()
             label = label.cpu()
-            y_pred = y_pred * boneage_div + boneage_mean
-            # y_pred_loss = y_pred.argmax(axis=1)
+            # y_pred = y_pred * boneage_div + boneage_mean
+            y_pred = y_pred.argmax(axis=1)
             y_pred = y_pred.squeeze()
 
             batch_loss = loss_fn(y_pred, label).item()
